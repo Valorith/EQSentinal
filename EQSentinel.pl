@@ -12,9 +12,11 @@ our @keywords = ("error", "warning", "critical");
 
 # path to log file
 our $log_file = undef;
+our $log_char = undef;
 our $last_modified = undef;
 our $start_time;
 our %detected_logs :shared;
+our %player_profiles :shared;
 our $scan_thread;
 
 my $orange = "\e[38;5;208m";
@@ -39,12 +41,93 @@ print join("\n", @messages, "\n");
 my $debug = 0;
 my $scanning :shared = 0;
 
+sub detectChar {
+    my ($path) = @_;
+    $path =~ /eqlog_(.*?)_/;
+    return $1;
+}
+
+
+sub load_profiles {
+    open(my $config_file, "<", "profiles.config") or do {
+        print "No saved player profiles detected.\n";
+        return;
+    };
+    while (my $line = <$config_file>) {
+        chomp $line;
+        my ($name, $path) = ($line =~ /([^:]*):(.*)/);
+        $player_profiles{$name} = $path;
+    }
+    close $config_file;
+}
+
+
+sub save_profiles {
+    open(my $config_file, ">", "profiles.config") or die "Could not open file: $!";
+    
+    while( my($name, $path) = each %player_profiles ) {
+      print $config_file $name . ":" . $player_profiles{$name} . "\n"
+    }
+    close $config_file;
+}
+
+sub load_selected_profile {
+    open(my $config_file, "<", "selected_profile.config") or do {
+        print "No selected profiles detected.\n";
+        return;
+    };
+    my $line = <$config_file>;
+    if($line){
+        chomp $line;
+        ($log_char, $log_file) = ($line =~ /([^:]*):(.*)/);
+        close $config_file;
+    }
+    else{
+        close $config_file;
+    }
+}
+
+sub save_selected_profile {
+    if(defined $log_char && defined $log_file){
+        open(my $config_file, ">", "selected_profile.config") or die "Could not open file: $!";
+        print $config_file $log_char . ":" . $player_profiles{$log_char};
+        close $config_file;
+    }
+}
+
+sub add_player_profile {
+    my ($name, $path) = @_;
+    if (!exists $player_profiles{$name}){
+        $player_profiles{$name} = $path;
+        save_profiles();
+    } else {
+        print "Error: Profile with name '$name' already exists.\n";
+    }
+}
+
+
 sub showKeywords() {
     print "Active keywords: \n";
     foreach my $word (@keywords) {
         print " - $word\n";
     }
 }
+
+sub display_profiles {
+    my $i = 1; # counter for the profile number
+    my $green = "\e[38;5;10m";
+    my $reset = "\e[0m";
+    if(%player_profiles){
+        print "--- List of Selected Profiles ---\n";
+        while(my($name, $path) = each %player_profiles){
+            print $green . $i . "." . $reset . " Profile name: " . $name . ", Profile path: " . $path . "\n";
+            $i++;
+        }
+    }else{
+        print "No saved player profiles detected.\n";
+    }
+}
+
 
 sub RestartScanner() {
     if (!$log_file) {
@@ -57,6 +140,8 @@ sub RestartScanner() {
             # Wait for previous scan thread to finish
             $scan_thread->join();
         }
+        save_profiles();
+        save_selected_profile();
         my $startText = "Restarting scanner...\n";
         print "$green$startText$reset";
         $scanning = 1;
@@ -70,13 +155,56 @@ sub RestartScanner() {
     }
 }
 
+sub handle_set_profile {
+    # check if there are any player profiles available
+    if(%player_profiles) {
+        print "--- Available Player Profiles ---\n";
+        my $i = 1;
+        # display a numbered list of the available player profiles
+        while(my($name, $path) = each %player_profiles) {
+            print $i . ". " . $name . " - " . $path . "\n";
+            $i++;
+        }
+        # prompt the user to select a profile number
+        print "Enter the number corresponding to the profile you wish to load: ";
+        my $profile_num = <STDIN>;
+        chomp $profile_num;
+        # check if the user entered a valid profile number
+        if($profile_num > 0 && $profile_num <= scalar keys %player_profiles) {
+            my $i = 1;
+            while(my($name, $path) = each %player_profiles) {
+                if($i == $profile_num) {
+                    # set the selected profile
+                    $log_char = $name;
+                    $log_file = $path;
+                    save_selected_profile();
+                    print "Profile '$name' has been set as the selected profile.\n";
+                    last;
+                }
+                $i++;
+            }
+        } else {
+            print "Invalid profile number. Please enter a valid number corresponding to a profile from the list.\n";
+        }
+    } else {
+        print "No player profiles available.\n";
+    }
+}
+
+
 
 sub main() {
+
+    load_profiles();
+    load_selected_profile();
+
     while (1) {
         my $input = lc(<STDIN>);
         chomp $input;
         if ($input =~ /^path (.*)/) {
             $log_file = $1;
+            $log_char = detectChar($log_file);
+            add_player_profile($log_char, $log_file);
             if (-e $log_file) {
                 $last_modified = (stat $log_file)[9];
                 print "Log file path set to $log_file\n";
@@ -84,6 +212,14 @@ sub main() {
                 print "Error: Log file $log_file does not exist.\n";
                 $log_file = undef;
             }
+        } elsif ($input eq "profiles") {
+            display_profiles();
+        } elsif ($input eq "profiles set") {
+            handle_set_profile();
+        } elsif ($input eq "profiles clear") {
+           %player_profiles = ();
+            print "All player profiles have been cleared.\n";
+            save_profiles();
         } elsif ($input eq "start") {
             if (!$log_file) {
                 print "Error: Log file path not set. Please set log file path with 'path' command before starting.\n";
@@ -150,6 +286,7 @@ sub main() {
         } else {
         print "Invalid command. Please enter 'path', 'start', 'stop', 'add', 'remove' or 'status'\n";
         }
+        print "-----------------------------------------\n";
     }
 }
 
@@ -247,3 +384,11 @@ sub ConvertDay {
 }
 
 main(); #Main sub call
+
+END {
+    if ($scan_thread) {
+        $scan_thread->kill;
+    }
+    save_profiles();
+    save_selected_profile();
+}
