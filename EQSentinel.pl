@@ -8,7 +8,7 @@ use DateTime;
 no warnings 'experimental';
 
 # array of keywords to search for
-our @keywords = ("error", "warning", "critical");
+our @keywords = ("rampage", "stun");
 
 # path to log file
 our $log_file = undef;
@@ -282,6 +282,9 @@ sub main() {
             print "Debugging is ".($debug ? "on" : "off")."\n"
         } elsif ($input eq "exit") {
             print "Exiting EQSentinal\n";
+            if ($scan_thread) {
+                $scan_thread->kill;
+            }
             exit;
         } else {
         print "Invalid command. Please enter 'path', 'start', 'stop', 'add', 'remove' or 'status'\n";
@@ -292,10 +295,16 @@ sub main() {
 
 sub scan_log {
     our ($log_file, $last_modified) = @_;
+    if (not $last_modified) {
+        $last_modified = 0;
+    }
     # Loop while the scanning variable is true
     while ($scanning) {
         # Get the current modification time of the log file
         my $current_modified = (stat $log_file)[9];
+        if (not $current_modified) {
+            $current_modified = 0;
+        }
         # Check if the current modification time is greater than the last recorded modification time
         if($current_modified > $last_modified) {
             # Open the log file for reading
