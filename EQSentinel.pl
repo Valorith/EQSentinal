@@ -25,15 +25,21 @@ my $red = "\e[38;5;9m";
 my $reset = "\e[0m";
 
 my @messages = (
-"Welcome to the log scanner.",
-"Please set the log file path with ${orange}path${reset} command, followed by the full file path to the log file.",
-"Once the path is set, start the scanner with the ${orange}start${reset} command.",
-"Stop the scanner with the ${orange}stop${reset} command.",
-"Enter debug mode with the ${orange}debug${reset} command.",
-"Add keywords to search for with the ${orange}add${reset} command, followed by the keyword.",
-"Remove keywords from the search list with the ${orange}remove${reset} command, followed by the keyword.",
-"List all active keywords by using the ${orange}keywords${reset} command."
+    "Welcome to the EQ Sentinel.",
+    "Commands:",
+    "  ${orange}path${reset} [file path]: Set the log file path",
+    "  ${orange}start${reset}: Start the scanner",
+    "  ${orange}stop${reset}: Stop the scanner",
+    "  ${orange}debug${reset}: Enter debug mode",
+    "  ${orange}keywords add${reset} [keyword]: Add a keyword to search for",
+    "  ${orange}keywords remove${reset} [keyword]: Remove a keyword from search list",
+    "  ${orange}keywords${reset}: List all active keywords",
+    "  ${orange}status${reset}: Print a status report.",
+    "  ${orange}profiles${reset}: List all active player profiles",
+    "  ${orange}profiles set${reset}: List all active player profiles and select one as active.",
+    "  ${orange}exit${reset}: Close EQ Sentinel"
 );
+
 
 print join("\n", @messages, "\n");
 
@@ -45,6 +51,27 @@ sub detectChar {
     my ($path) = @_;
     $path =~ /eqlog_(.*?)_/;
     return $1;
+}
+
+sub save_keywords {
+    open(my $config_file, ">", "keywords.config") or do {
+        print "Failed to save keywords to config file.\n";
+        return;
+    };
+    close $config_file;
+}
+
+sub load_keywords {
+    open(my $config_file, "<", "keywords.config") or do {
+    print "No saved keywords detected.\n";
+    return;
+    };
+    @keywords = ();
+    while (my $line = <$config_file>) {
+        chomp $line;
+        push @keywords, $line;
+    }
+    close $config_file;
 }
 
 
@@ -120,7 +147,11 @@ sub display_profiles {
     if(%player_profiles){
         print "--- List of Selected Profiles ---\n";
         while(my($name, $path) = each %player_profiles){
-            print $green . $i . "." . $reset . " Profile name: " . $name . ", Profile path: " . $path . "\n";
+            my $indicator = "$green <------Active$reset";
+            if (not ($name eq $log_char)) {
+                $indicator = "";
+            } 
+            print $green . $i . "." . $reset . " Profile name: " . $name . ", Profile path: " . $path . "$indicator" . "\n";
             $i++;
         }
     }else{
@@ -197,6 +228,7 @@ sub main() {
 
     load_profiles();
     load_selected_profile();
+    load_keywords();
 
     while (1) {
         my $input = lc(<STDIN>);
@@ -248,22 +280,25 @@ sub main() {
         } elsif ($input eq "debug") {
             $debug = !$debug;
             print "Debugging is ".($debug ? "on" : "off")."\n"
-        } elsif ($input =~ /^add (.*)/) {
+        } elsif ($input =~ /^keywords add (.*)/) {
             push @keywords, $1;
             print "Keyword '$1' added to search list.\n";
+            save_keywords();
             if ($scanning) {
                 RestartScanner();
             }
-        } elsif ($input =~ /^remove (.)/) {
-            my $index = first_index { $_ eq $1 } @keywords;
+        } elsif ($input =~ /^keywords remove (.*)/) {
+            my $word = $1;
+            my $index = first_index { $_ eq $word } @keywords;
             if(defined $index) {
                 splice @keywords, $index, 1;
-                print "Keyword '$1' removed from search list.\n";
+                print "Keyword '$word' removed from search list.\n";
+                save_keywords();
                 if ($scanning) {
                     RestartScanner();
                 }
             } else {
-                print "Error: '$1' not found in search list.\n";
+                print "Error: '$word' not found in search list.\n";
             }
         } elsif ($input eq "keywords") {
             showKeywords();
@@ -400,4 +435,5 @@ END {
     }
     save_profiles();
     save_selected_profile();
+    save_keywords();
 }
