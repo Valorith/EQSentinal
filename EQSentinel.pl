@@ -197,8 +197,14 @@ sub handle_set_profile {
         print "--- Available Player Profiles ---\n";
         my $i = 1;
         # display a numbered list of the available player profiles
+        my $indicator = "$green <------Active$reset";
+        my $modifier = "";
         while(my($name, $path) = each %player_profiles) {
-            print $i . ". " . $name . " - " . $path . "\n";
+            if ($name eq $log_char) {
+                $modifier = $indicator;
+            } 
+            print $i . ". " . $name . " - " . $path . "$modifier\n";
+            $modifier = "";
             $i++;
         }
         # prompt the user to select a profile number
