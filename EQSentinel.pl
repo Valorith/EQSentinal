@@ -59,6 +59,7 @@ sub save_keywords {
         return;
     };
     close $config_file;
+    return;
 }
 
 sub load_keywords {
@@ -72,6 +73,7 @@ sub load_keywords {
         push @keywords, $line;
     }
     close $config_file;
+    return;
 }
 
 
@@ -96,6 +98,7 @@ sub save_profiles {
       print $config_file $name . ":" . $player_profiles{$name} . "\n"
     }
     close $config_file;
+    return;
 }
 
 sub load_selected_profile {
@@ -112,6 +115,7 @@ sub load_selected_profile {
     else{
         close $config_file;
     }
+    return;
 }
 
 sub save_selected_profile {
@@ -130,6 +134,7 @@ sub add_player_profile {
     } else {
         print "Error: Profile with name '$name' already exists.\n";
     }
+    return;
 }
 
 
@@ -308,18 +313,15 @@ sub main() {
             } else {
                 print "Log file path: $log_file\n";
                 if ($scanning) {
-                    print "Scanner status: Running\n";
+                    print "Scanner status:$green Running$reset\n";
                 } else {
-                    print "Scanner status: Stopped\n";
+                    print "Scanner status:$red Stopped$reset\n";
                 }
             }
             print "Search list keywords: @keywords\n";
-            print "Debugging is ".($debug ? "on" : "off")."\n"
+            print "Debugging:".($debug ? "$green Enabled$reset" : "$red Disbled$reset")."\n"
         } elsif ($input eq "exit") {
-            print "Exiting EQSentinal\n";
-            if ($scan_thread) {
-                $scan_thread->kill;
-            }
+            $scanning = 0;
             exit;
         } else {
         print "Invalid command. Please enter 'path', 'start', 'stop', 'add', 'remove' or 'status'\n";
@@ -430,8 +432,13 @@ sub ConvertDay {
 main(); #Main sub call
 
 END {
-    if ($scan_thread) {
-        $scan_thread->kill;
+    $scanning = 0;
+    print("${red}Exiting EQSentinal...${reset}\n");
+    print("${orange}Saving settings...${reset}\n");
+    sleep(1);
+    print("${green}Settings Saved!${reset}\n");
+    if ($scan_thread and $scan_thread->is_joinable()) {
+        $scan_thread->join();
     }
     save_profiles();
     save_selected_profile();
