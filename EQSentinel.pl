@@ -24,6 +24,9 @@ my $green = "\e[38;5;10m";
 my $red = "\e[38;5;9m";
 my $reset = "\e[0m";
 
+my $debug = 0;
+my $scanning :shared = 0;
+
 my @messages = (
     "Welcome to the EQ Sentinel.",
     "Commands:",
@@ -37,15 +40,22 @@ my @messages = (
     "  ${orange}status${reset}: Print a status report.",
     "  ${orange}profiles${reset}: List all active player profiles",
     "  ${orange}profiles set${reset}: List all active player profiles and select one as active.",
+    "  ${orange}menu${reset}: Show this menu",
     "  ${orange}exit${reset}: Close EQ Sentinel"
 );
 
 
-print join("\n", @messages, "\n");
 
 
-my $debug = 0;
-my $scanning :shared = 0;
+menu(); #Show main menu
+
+
+
+
+sub menu {
+    print join("\n", @messages, "\n");
+}
+
 
 sub detectChar {
     my ($path) = @_;
@@ -146,9 +156,9 @@ sub showKeywords() {
 }
 
 sub display_profiles {
-    my $i = 1; # counter for the profile number
-    my $green = "\e[38;5;10m";
-    my $reset = "\e[0m";
+    my $size = keys %player_profiles;
+    print("Number of saved profiles: $size\n");
+    my $index = 1; # counter for the profile number
     if(%player_profiles){
         print "--- List of Selected Profiles ---\n";
         while(my($name, $path) = each %player_profiles){
@@ -156,8 +166,8 @@ sub display_profiles {
             if (not ($name eq $log_char)) {
                 $indicator = "";
             } 
-            print $green . $i . "." . $reset . " Profile name: " . $name . ", Profile path: " . $path . "$indicator" . "\n";
-            $i++;
+            print $green . $index . "." . $reset . " Profile name: " . $name . ", Profile path: " . $path . "$indicator" . "\n";
+            $index++;
         }
     }else{
         print "No saved player profiles detected.\n";
@@ -325,7 +335,9 @@ sub main() {
                 }
             }
             print "Search list keywords: @keywords\n";
-            print "Debugging:".($debug ? "$green Enabled$reset" : "$red Disbled$reset")."\n"
+            print "Debugging:".($debug ? "$green Enabled$reset" : "$red Disabled$reset")."\n"
+        } elsif ($input eq "menu") {
+            menu(); # Show main menu
         } elsif ($input eq "exit") {
             $scanning = 0;
             exit;
