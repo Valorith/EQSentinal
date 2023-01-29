@@ -5,6 +5,9 @@ use threads;
 use threads::shared;
 use Time::Local;
 use DateTime;
+use File::Basename;
+use Cwd 'abs_path';
+use Win32::API;
 no warnings 'experimental';
 
 # array of keywords to search for
@@ -18,6 +21,7 @@ our $start_time;
 our %detected_logs :shared;
 our %player_profiles :shared;
 our $scan_thread;
+our $sound_thread;
 
 my $orange = "\e[38;5;208m";
 my $green = "\e[38;5;10m";
@@ -44,13 +48,54 @@ my @messages = (
     "  ${orange}exit${reset}: Close EQ Sentinel"
 );
 
-
-
-
+check_and_install_alsa();
 menu(); #Show main menu
 
 
 
+sub check_and_install_alsa {
+    system("cpanm install Win32::API") == 0
+    or die "Failed to install Win32::API: $?";
+}
+
+sub play_sound {
+    my $selection = shift;
+    # Get the directory of the script
+    my $script_dir = dirname(abs_path($0));
+
+    # Append the "Sounds" subdirectory to the script directory
+    my $sounds_dir = "$script_dir/Sounds";
+
+    # Declare the mciSendString function
+    my $mciSendString = new Win32::API( "winmm", "mciSendStringA", 'PLLL', 'L' );
+
+    # The file to play
+    my $file = "";
+    if ($selection eq "ding") {
+        $file = "$sounds_dir/ding.mp3";
+    } elsif ($selection eq "alarm") {
+        $file = "$sounds_dir/alarm.mp3";
+    } elsif ($selection eq "chime") {
+        $file = "$sounds_dir/chime.mp3";
+    } else {
+        print "Invalid sound selection: $selection";
+        return;
+    }
+
+    # Send the command to open the file
+    $mciSendString->Call( "open \"$file\" type mpegvideo alias my_file", 0, 0, 0 );
+
+    # Send the command to play the file
+    $mciSendString->Call( "play my_file", 0, 0, 0 );
+
+    # Wait for the file to finish playing
+    my $status = 0;
+    $mciSendString->Call("status my_file mode", $status, 1024, 0);
+    sleep(2);
+
+    # Close the file
+    $mciSendString->Call( "close my_file", 0, 0, 0 );
+}
 
 sub menu {
     print join("\n", @messages, "\n");
@@ -105,7 +150,8 @@ sub save_profiles {
     open(my $config_file, ">", "profiles.config") or die "Could not open file: $!";
     
     while( my($name, $path) = each %player_profiles ) {
-      print $config_file $name . ":" . $player_profiles{$name} . "\n"
+      print $config_file $name . ":" . $player_profiles{$name} . "\n";
+      print("Saved Profile: " . $name . ":" . $player_profiles{$name} . "\n") if $debug;
     }
     close $config_file;
     return;
@@ -131,7 +177,11 @@ sub load_selected_profile {
 sub save_selected_profile {
     if(defined $log_char && defined $log_file){
         open(my $config_file, ">", "selected_profile.config") or die "Could not open file: $!";
-        print $config_file $log_char . ":" . $player_profiles{$log_char};
+        if (defined $player_profiles{$log_char}) {
+            print $config_file "$log_char:" . $player_profiles{$log_char};
+        } else {
+            print "Save selected profile abandoned for $log_char($log_file)...\n";
+        }
         close $config_file;
     }
 }
@@ -409,6 +459,7 @@ sub KeywordDetected {
         my $green_line = $line;
         $green_line =~ s/($keyword)/$green$1$reset/g;
         print $log_time->strftime("[%Y-%m-%d %H:%M:%S]"), "Keyword [$green$keyword$reset] detected in line: $green_line\n";
+        $sound_thread = threads->create(\&play_sound, "ding")->detach();
     }
 }
 
@@ -457,6 +508,9 @@ END {
     print("${green}Settings Saved!${reset}\n");
     if ($scan_thread and $scan_thread->is_joinable()) {
         $scan_thread->join();
+    }
+    if ($sound_thread and $sound_thread->is_joinable()) {
+        $sound_thread->join();
     }
     save_profiles();
     save_selected_profile();
